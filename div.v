@@ -19,57 +19,64 @@
 // 
 //////////////////////////////////////////////////////////////////////////////////
  
-module div(a_in,b_in,o,c_out);
-parameter m = 8, n = 23;
-input [m+n:0] a_in, b_in;
-input [1:0]o;
-output [m+n:0] c_out;
-wire sign, is_zero;
-wire [m-1:0] exp, exp_c, shift_index;
-wire [n:0] mant, div, shifted;
+module div(Res,valid,A,B);
+input [31:0]A,B;
+output [31:0]Res;
+reg Sa,Sb,Sc;
+reg [22:0]Ma,Mb,Mc;
+reg [7:0]Ea,Eb,Ec;
+output valid;
+reg vali;
+reg [31:0] A_dummy,B_dummy;
+wire [31:0]mul_out1,add_out1,D_1,D_2,D_3,D_4,D_5,D_6,Y_1;
+always @(A,B)
+begin
+Sa = A[31];
+Sb = B[31];
+Ma = A[22:0];
+Mb = B[22:0];
+Ea = A[30:23];
+Eb = B[30:23];
+Sc = Sa ^ Sb;
+Ec = Ea - Eb + 8'd126;
+A_dummy = {Sa,Ec,Ma};
 
-assign sign = a_in[m+n] ^ b_in[m+n];
-assign exp_c = a_in[m+n-1:n] - b_in[m+n-1:n] + {(m-1){1'b1}} + (n-5);
+B_dummy = {1'b0,8'd126,Mb};
+if(Ma != 0 && Mb != 0)
+begin
+vali = 1'b1;
+end
+else
+vali = 1'b0;
+end
+// ((-37)/17)*D
+ mult INIT(mul_out1,32'hC00B4B4B,B_dummy);
+// X0 = 48/17 + (((-37)/17)*D)
+add_sub Add1(add_out1,mul_out1,32'h4034B4B5,1'b0);
+// Xi+1 = Xi(2 -(D*Xi)) -- 6_times
+FP_ITER ITER1(D_1,add_out1,B_dummy);
+FP_ITER ITER2(D_2,B_dummy,D_1);
+FP_ITER ITER3(D_3,B_dummy,D_2);
 
-div_q div_inst({1'b1,a_in[n-1:0],{5{1'b0}}}, {1'b1,b_in[n-1:0]}, div);
+FP_ITER ITER4(D_4,B_dummy,D_3);
+FP_ITER ITER5(D_5,B_dummy,D_4);
+FP_ITER ITER6(D_6,B_dummy,D_5);
+ mult FIN(Y_1,D_6,A_dummy);
 
-assign is_zero = (a_in[m+n-1:0] == 'b0) ;
-mantshift mant_shifter(div, shifted, shift_index );
-assign exp = exp_c - shift_index;
-assign mant = shifted;
-assign c_out = is_zero ? 'b0 : {sign,exp,mant[n-1:0]};
+assign valid = vali;
+assign Res = {Sc,Y_1[30:0]};
 endmodule
 
-
-module div_q(a, b, c );
-parameter n=23;
-input [2*n:0] a;
-input [n:0] b;
-output [5:0] c;
-reg [2*n:0] a1;
-reg [n:0] b1;
-reg [5:0] i, p1;
-always@(a,b) begin
-a1 = a; b1 = b; p1 = 'b0;
-for(i=1;i<63;i=i+1) begin
-if (a1 >= i*b1) p1 = i;
-end
-end
-assign c = p1;
-endmodule
-module mantshift(mant, shifted, shift_index );
-parameter m = 8, n = 23;
-input [n:0] mant;
-output reg [m-1:0] shift_index;
-output reg [n:0] shifted;
-reg [n:0] target;
-reg [$clog2(n)-1:0] cnt;
-always@(mant) begin target = mant;
-shift_index = 'b0;
-for(cnt = 0; cnt < n+1; cnt = cnt + 1)begin
-if (target[cnt]) shift_index = n - cnt;
-end
-shifted = mant << shift_index; 
-end
+module FP_ITER(Y,A,B);
+input [31:0]A,B;
+output [31:0]Y;
+wire [31:0] mul_out,add_out,res;
+// D*xi
+ mult MUL(mul_out,A,B);
+//2-(D*Xi)
+add_sub sub(add_out,32'h4000_0000,mul_out,1'b1);
+//Xi+1=Xi(2-(D*Xi))
+ mult MUL1(res,add_out,B);
+assign Y = res;
 endmodule
 

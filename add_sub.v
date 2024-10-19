@@ -22,7 +22,7 @@
 
 `timescale 1ns / 1ps
 
-module add_sub(a,b,o,y);
+module add_sub(y,a,b,o);
 input [31:0] a;
 input [31:0] b;
 input o;
